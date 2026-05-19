@@ -58,6 +58,12 @@ main{padding:2rem;position:relative;z-index:1;max-width:1200px;margin:0 auto}
 .p-img-wrap{width:100%;aspect-ratio:4/3;overflow:hidden;background:var(--surface3);position:relative}
 .p-img-wrap img{width:100%;height:100%;object-fit:cover;transition:transform .4s}
 .poster-card:hover .p-img-wrap img{transform:scale(1.04)}
+.p-zoom{position:absolute;top:.5rem;right:.5rem;background:rgba(0,0,0,.55);border:none;color:#fff;width:30px;height:30px;border-radius:7px;cursor:pointer;font-size:1rem;display:flex;align-items:center;justify-content:center;z-index:10;opacity:0;transition:opacity .2s;line-height:1}
+.p-img-wrap:hover .p-zoom{opacity:1}
+.lightbox{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:500;display:flex;align-items:center;justify-content:center;cursor:zoom-out;animation:fadeIn .15s;padding:1rem}
+.lightbox img{max-width:95vw;max-height:92vh;object-fit:contain;border-radius:8px;box-shadow:0 0 60px rgba(0,0,0,.6);cursor:default}
+.lightbox-close{position:fixed;top:1rem;right:1rem;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.25);color:#fff;width:38px;height:38px;border-radius:50%;cursor:pointer;font-size:1rem;display:flex;align-items:center;justify-content:center;transition:background .2s}
+.lightbox-close:hover{background:rgba(255,255,255,.25)}
 .p-ph{display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:3rem;color:var(--text3)}
 .p-body{padding:1rem}
 .p-name{font-family:var(--fd);font-size:1.1rem;font-weight:700;margin-bottom:.5rem}
@@ -204,7 +210,7 @@ function renderVote(){
     div.className='poster-card'+(isMyVote?' voted-for':'')+(voted?' disabled':'');
     if(!voted)div.onclick=()=>askVote(p.id);
     div.innerHTML=`
-      ${p.dataUrl?`<div class="p-img-wrap"><img src="${p.dataUrl}" alt="${p.name}" loading="lazy"></div>`:`<div class="p-img-wrap"><div class="p-ph">🖼️</div></div>`}
+      ${p.dataUrl?`<div class="p-img-wrap"><img src="${p.dataUrl}" alt="${p.name}" loading="lazy"><button class="p-zoom" onclick="event.stopPropagation();openLightbox('${p.dataUrl}')" title="Voir en grand">⤢</button></div>`:`<div class="p-img-wrap"><div class="p-ph">🖼️</div></div>`}
       ${isMyVote?'<div class="voted-check">✓</div>':''}
       <div class="p-body">
         <div class="p-name">${p.name}</div>
@@ -288,6 +294,16 @@ async function init(){
   startSSE();
 }
 init();
+
+function openLightbox(src){
+  const lb=document.createElement('div');lb.className='lightbox';lb.id='lightbox';
+  lb.onclick=e=>{if(e.target===lb)closeLightbox()};
+  lb.innerHTML=`<button class="lightbox-close" onclick="closeLightbox()">✕</button><img src="${src}" alt="">`;
+  document.body.appendChild(lb);
+  document.addEventListener('keydown',_lbKey);
+}
+function closeLightbox(){const lb=document.getElementById('lightbox');if(lb)lb.remove();document.removeEventListener('keydown',_lbKey);}
+function _lbKey(e){if(e.key==='Escape')closeLightbox();}
 
 let _tt;
 function toast(msg,cls=''){const t=document.getElementById('toast');t.textContent=msg;t.className='toast '+(cls||'');clearTimeout(_tt);_tt=setTimeout(()=>t.classList.add('hidden'),3200)}
