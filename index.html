@@ -173,8 +173,11 @@ function startSSE(){
 }
 
 function isOpen(s){if(!s||!s.voteOpen)return false;if(s.deadline&&Date.now()>=new Date(s.deadline).getTime())return false;return true}
-function voteKey(){return'pv_vote_'+(state&&state.sessionId?state.sessionId:'default')}
-function myVote(){return localStorage.getItem(voteKey())}
+function votesKey(){return'pv_votes_'+(state&&state.sessionId?state.sessionId:'default')}
+function myVotes(){try{const v=localStorage.getItem(votesKey());return v?JSON.parse(v):[]}catch(e){return[]}}
+function hasVotedFor(id){return myVotes().includes(id)}
+function canVote(){return myVotes().length<3}
+function addVote(id){const v=myVotes();if(!v.includes(id)&&v.length<3){v.push(id);localStorage.setItem(votesKey(),JSON.stringify(v));return true;}return false;}
 function fmt(ms){if(ms<=0)return'Terminé';const sec=Math.floor(ms/1000),m=Math.floor(sec/60),h=Math.floor(m/60),d=Math.floor(h/24);if(d>0)return`${d}j ${h%24}h`;if(h>0)return`${h}h ${m%60}m`;return`${m}m ${sec%60}s`}
 function maxV(p){return Math.max(1,...(p||[]).map(x=>x.votes||0))}
 
@@ -195,29 +198,32 @@ function render(){
 }
 
 function renderVote(){
-  const voted=myVote(),mx=maxV(state.posters);
+  const votes=myVotes(),voteCount=votes.length,allVoted=voteCount>=3,mx=maxV(state.posters);
+  const heroMsg=allVoted?'Vos 3 votes ont bien été enregistrés.':voteCount>0?`Vous avez voté pour ${voteCount}/3 poster${voteCount>1?'s':''}. Encore ${3-voteCount} vote${3-voteCount>1?'s':''} à donner.`:'Cliquez sur un poster pour voter. Vous pouvez choisir 3 posters.';
   document.getElementById('main').innerHTML=`
     <div class="hero">
-      <h1 class="hero-title">Votez pour votre poster préféré</h1>
-      <p class="hero-sub">${voted?'Votre vote a bien été enregistré.':'Cliquez sur un poster pour voter. Un seul vote par personne.'}</p>
-      ${voted?'<div class="voted-badge">✓ Vote enregistré</div>':''}
+      <h1 class="hero-title">Votez pour vos posters préférés</h1>
+      <p class="hero-sub">${heroMsg}</p>
+      ${voteCount>0?`<div class="voted-badge">✓ ${voteCount}/3 vote${voteCount>1?'s':''} enregistré${voteCount>1?'s':''}</div>`:''}
     </div>
     <div class="grid" id="grid"></div>`;
   const grid=document.getElementById('grid');
-  (state.posters||[]).forEach(p=>{
-    const isMyVote=voted===p.id;
+  (state.posters||[]).forEach((p,index)=>{
+    const isMyVote=hasVotedFor(p.id);
+    const canVoteForThis=!isMyVote&&!allVoted;
+    const label=`Poster ${index+1}`;
     const div=document.createElement('div');
-    div.className='poster-card'+(isMyVote?' voted-for':'')+(voted?' disabled':'');
-    if(!voted)div.onclick=()=>askVote(p.id);
+    div.className='poster-card'+(isMyVote?' voted-for':'')+(canVoteForThis?'':' disabled');
+    if(canVoteForThis)div.onclick=()=>askVote(p.id);
     div.innerHTML=`
-      ${p.dataUrl?`<div class="p-img-wrap"><img src="${p.dataUrl}" alt="${p.name}" loading="lazy"><button class="p-zoom" onclick="event.stopPropagation();openLightbox('${p.dataUrl}')" title="Voir en grand">⤢</button></div>`:`<div class="p-img-wrap"><div class="p-ph">🖼️</div></div>`}
+      ${p.dataUrl?`<div class="p-img-wrap"><img src="${p.dataUrl}" alt="${label}" loading="lazy"><button class="p-zoom" onclick="event.stopPropagation();openLightbox('${p.dataUrl}')" title="Voir en grand">⤢</button></div>`:`<div class="p-img-wrap"><div class="p-ph">🖼️</div></div>`}
       ${isMyVote?'<div class="voted-check">✓</div>':''}
       <div class="p-body">
-        <div class="p-name">${p.name}</div>
+        <div class="p-name">${label}</div>
         <div class="p-bar-wrap"><div class="p-bar" style="width:${mx?Math.round((p.votes||0)/mx*100):0}%"></div></div>
         <div class="p-meta">
           <span class="p-votes-count">${p.votes||0} vote${(p.votes||0)!==1?'s':''}</span>
-          ${!voted?`<button class="vote-btn active" onclick="event.stopPropagation();askVote('${p.id}')">Voter</button>`:isMyVote?`<span class="vote-btn my-vote">Mon choix ✓</span>`:`<span class="vote-btn disabled">Voter</span>`}
+          ${canVoteForThis?`<button class="vote-btn active" onclick="event.stopPropagation();askVote('${p.id}')">Voter</button>`:isMyVote?`<span class="vote-btn my-vote">Mon choix ✓</span>`:`<span class="vote-btn disabled">Voter</span>`}
         </div>
       </div>`;
     grid.appendChild(div);
@@ -251,14 +257,18 @@ function renderPodium(){
 }
 
 function askVote(id){
-  if(myVote()){toast('Vous avez déjà voté.','err');return}
+  if(!canVote()){toast('Vous avez déjà utilisé vos 3 votes.','err');return}
+  if(hasVotedFor(id)){toast('Vous avez déjà voté pour ce poster.','err');return}
   const p=state.posters.find(x=>x.id===id);if(!p)return;
+  const idx=(state.posters||[]).findIndex(x=>x.id===id);
+  const label=`Poster ${idx+1}`;
+  const voteNum=myVotes().length+1;
   pendingVote=id;
   const m=document.createElement('div');m.className='modal-bg';m.id='modal';
   m.innerHTML=`<div class="modal">
-    ${p.dataUrl?`<img src="${p.dataUrl}" alt="${p.name}">`:'<div style="font-size:3rem;margin-bottom:1rem">🖼️</div>'}
-    <h3>${p.name}</h3>
-    <p>Confirmer votre vote pour ce poster ?<br><small style="color:var(--text3)">Cette action est irréversible.</small></p>
+    ${p.dataUrl?`<img src="${p.dataUrl}" alt="${label}">`:'<div style="font-size:3rem;margin-bottom:1rem">🖼️</div>'}
+    <h3>${label}</h3>
+    <p>Confirmer votre vote pour ce poster ?<br><small style="color:var(--text3)">Vote ${voteNum} sur 3 — irréversible.</small></p>
     <div class="modal-btns">
       <button class="btn btn-ghost" onclick="closeModal()">Annuler</button>
       <button class="btn btn-teal" onclick="confirmVote()">Confirmer ✓</button>
@@ -271,16 +281,18 @@ function closeModal(){const m=document.getElementById('modal');if(m)m.remove();p
 
 async function confirmVote(){
   const id=pendingVote;closeModal();if(!id)return;
-  // Refetch frais pour éviter race condition
   const fresh=await fbGet();
   if(!fresh){toast('Erreur réseau, réessayez.','err');return;}
   const idx=(fresh.posters||[]).findIndex(p=>p.id===id);if(idx<0)return;
   const newVotes=(fresh.posters[idx].votes||0)+1;
   const ok=await fbPatch(`state/posters/${idx}`,{votes:newVotes});
   if(ok){
-    localStorage.setItem('pv_vote_'+(fresh.sessionId||'default'),id);
+    addVote(id);
     fresh.posters[idx].votes=newVotes;
-    state=fresh;saveCache(state);toast('🗳️ Vote enregistré !','ok');render();
+    state=fresh;saveCache(state);
+    const remaining=3-myVotes().length;
+    toast(remaining>0?`🗳️ Vote enregistré ! Encore ${remaining} vote${remaining>1?'s':''} disponible${remaining>1?'s':''}.`:'🗳️ Vos 3 votes sont enregistrés !','ok');
+    render();
   }else toast('Erreur réseau, réessayez.','err');
 }
 
